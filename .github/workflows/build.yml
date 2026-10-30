@@ -1,0 +1,293 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create project files
+        run: |
+          mkdir -p app/src/main/java/com/pta/tradingterminal
+          mkdir -p app/src/main/res/layout
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "PTA"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.pta.tradingterminal'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.pta.tradingterminal"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core:1.12.0'
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="PTA Institutional Terminal"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:windowSoftInputMode="adjustResize|stateHidden"
+                      android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/root"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#0b0f17">
+
+              <WebView
+                  android:id="@+id/webView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:background="#0b0f17" />
+
+          </FrameLayout>
+          EOF
+
+          cat > app/src/main/java/com/pta/tradingterminal/MainActivity.java <<'EOF'
+          package com.pta.tradingterminal;
+
+          import android.annotation.SuppressLint;
+          import android.app.Activity;
+          import android.graphics.Color;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.webkit.RenderProcessGoneDetail;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          import androidx.core.graphics.Insets;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+
+          public class MainActivity extends Activity {
+
+              private static final String TARGET_URL = "http://127.0.0.1:5050";
+              private static final int THEME_COLOR = Color.parseColor("#0b0f17");
+
+              private WebView webView;
+
+              @SuppressLint("SetJavaScriptEnabled")
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+                  getWindow().setStatusBarColor(THEME_COLOR);
+                  getWindow().setNavigationBarColor(THEME_COLOR);
+                  if (Build.VERSION.SDK_INT >= 28) {
+                      getWindow().setNavigationBarDividerColor(THEME_COLOR);
+                  }
+
+                  setContentView(R.layout.activity_main);
+
+                  WindowInsetsControllerCompat controller =
+                          WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                  controller.setAppearanceLightStatusBars(false);
+                  controller.setAppearanceLightNavigationBars(false);
+
+                  View root = findViewById(R.id.root);
+                  ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+                      Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+                      Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+                      int bottom = Math.max(bars.bottom, ime.bottom);
+                      v.setPadding(bars.left, bars.top, bars.right, bottom);
+                      return WindowInsetsCompat.CONSUMED;
+                  });
+
+                  webView = findViewById(R.id.webView);
+                  setupWebView();
+
+                  if (savedInstanceState != null) {
+                      webView.restoreState(savedInstanceState);
+                  } else {
+                      webView.loadUrl(TARGET_URL);
+                  }
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private void setupWebView() {
+                  webView.setBackgroundColor(THEME_COLOR);
+                  webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                  webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  s.setLoadWithOverviewMode(true);
+                  s.setUseWideViewPort(true);
+                  s.setSupportZoom(false);
+                  s.setBuiltInZoomControls(false);
+                  s.setDisplayZoomControls(false);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setTextZoom(100);
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          return false;
+                      }
+
+                      @Override
+                      public void onReceivedError(WebView view, WebResourceRequest request,
+                                                  WebResourceError error) {
+                          if (request.isForMainFrame()) {
+                              String html = "<html><body style='background:#0b0f17;color:#cfd6e4;"
+                                      + "font-family:sans-serif;text-align:center;padding-top:30vh'>"
+                                      + "<h3>Server not reachable</h3>"
+                                      + "<p>Start your server on " + TARGET_URL + "</p>"
+                                      + "<button onclick=\"location.href='" + TARGET_URL + "'\" "
+                                      + "style='padding:12px 28px;font-size:16px;border:0;"
+                                      + "border-radius:8px;background:#2962ff;color:#fff'>Retry</button>"
+                                      + "</body></html>";
+                              view.loadDataWithBaseURL(TARGET_URL, html, "text/html", "UTF-8", null);
+                          }
+                      }
+
+                      @Override
+                      public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                          view.loadUrl(TARGET_URL);
+                          return true;
+                      }
+                  });
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      moveTaskToBack(true);
+                  }
+              }
+
+              @Override
+              protected void onSaveInstanceState(Bundle outState) {
+                  super.onSaveInstanceState(outState);
+                  if (webView != null) webView.saveState(outState);
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  if (webView != null) webView.onResume();
+              }
+
+              @Override
+              protected void onPause() {
+                  if (webView != null) webView.onPause();
+                  super.onPause();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.stopLoading();
+                      webView.destroy();
+                      webView = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.4
+
+      - run: gradle assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTA-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
