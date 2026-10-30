@@ -14,6 +14,9 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/pta/tradingterminal
           mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -57,8 +60,8 @@ jobs:
                   applicationId "com.pta.tradingterminal"
                   minSdk 24
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 3
+                  versionName "1.2"
               }
 
               compileOptions {
@@ -69,6 +72,7 @@ jobs:
 
           dependencies {
               implementation 'androidx.core:core:1.12.0'
+              implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
           }
           EOF
 
@@ -82,7 +86,7 @@ jobs:
               <application
                   android:allowBackup="true"
                   android:label="PTA Institutional Terminal"
-                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:icon="@mipmap/ic_launcher"
                   android:usesCleartextTraffic="true"
                   android:hardwareAccelerated="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
@@ -103,6 +107,54 @@ jobs:
           </manifest>
           EOF
 
+          cat > app/src/main/res/drawable/ic_launcher_background.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#0b0f17"
+                  android:pathData="M0,0h108v108h-108z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#ef5350"
+                  android:pathData="M29,48h2v26h-2z M24,54h12v14h-12z" />
+              <path
+                  android:fillColor="#26a69a"
+                  android:pathData="M50,32h2v36h-2z M45,40h12v20h-12z M71,24h2v34h-2z M66,30h12v20h-12z" />
+              <path
+                  android:fillColor="#2962ff"
+                  android:pathData="M24,80h54v3h-54z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/mipmap/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="@drawable/ic_launcher_background" />
+              <item android:drawable="@drawable/ic_launcher_foreground" />
+          </layer-list>
+          EOF
+
           cat > app/src/main/res/layout/activity_main.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -111,11 +163,18 @@ jobs:
               android:layout_height="match_parent"
               android:background="#0b0f17">
 
-              <WebView
-                  android:id="@+id/webView"
+              <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                  android:id="@+id/swipeRefresh"
                   android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:background="#0b0f17" />
+                  android:layout_height="match_parent">
+
+                  <WebView
+                      android:id="@+id/webView"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:background="#0b0f17" />
+
+              </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
           </FrameLayout>
           EOF
@@ -125,6 +184,7 @@ jobs:
 
           import android.annotation.SuppressLint;
           import android.app.Activity;
+          import android.graphics.Bitmap;
           import android.graphics.Color;
           import android.os.Build;
           import android.os.Bundle;
@@ -141,6 +201,7 @@ jobs:
           import androidx.core.view.WindowCompat;
           import androidx.core.view.WindowInsetsCompat;
           import androidx.core.view.WindowInsetsControllerCompat;
+          import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
           public class MainActivity extends Activity {
 
@@ -148,6 +209,8 @@ jobs:
               private static final int THEME_COLOR = Color.parseColor("#0b0f17");
 
               private WebView webView;
+              private SwipeRefreshLayout swipeRefresh;
+              private boolean hadError = false;
 
               @SuppressLint("SetJavaScriptEnabled")
               @Override
@@ -178,13 +241,31 @@ jobs:
                   });
 
                   webView = findViewById(R.id.webView);
+                  swipeRefresh = findViewById(R.id.swipeRefresh);
                   setupWebView();
+                  setupSwipeRefresh();
 
                   if (savedInstanceState != null) {
                       webView.restoreState(savedInstanceState);
                   } else {
                       webView.loadUrl(TARGET_URL);
                   }
+              }
+
+              private void setupSwipeRefresh() {
+                  swipeRefresh.setColorSchemeColors(Color.parseColor("#2962ff"));
+                  swipeRefresh.setProgressBackgroundColorSchemeColor(Color.parseColor("#1a2233"));
+
+                  swipeRefresh.setOnChildScrollUpCallback((parent, child) -> webView.getScrollY() > 0);
+
+                  swipeRefresh.setOnRefreshListener(() -> {
+                      if (hadError) {
+                          hadError = false;
+                          webView.loadUrl(TARGET_URL);
+                      } else {
+                          webView.reload();
+                      }
+                  });
               }
 
               @SuppressLint("SetJavaScriptEnabled")
@@ -214,16 +295,27 @@ jobs:
                       }
 
                       @Override
+                      public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                          super.onPageStarted(view, url, favicon);
+                      }
+
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          swipeRefresh.setRefreshing(false);
+                      }
+
+                      @Override
                       public void onReceivedError(WebView view, WebResourceRequest request,
                                                   WebResourceError error) {
                           if (request.isForMainFrame()) {
+                              hadError = true;
+                              swipeRefresh.setRefreshing(false);
                               String html = "<html><body style='background:#0b0f17;color:#cfd6e4;"
                                       + "font-family:sans-serif;text-align:center;padding-top:30vh'>"
                                       + "<h3>Server not reachable</h3>"
                                       + "<p>Start your server on " + TARGET_URL + "</p>"
-                                      + "<button onclick=\"location.href='" + TARGET_URL + "'\" "
-                                      + "style='padding:12px 28px;font-size:16px;border:0;"
-                                      + "border-radius:8px;background:#2962ff;color:#fff'>Retry</button>"
+                                      + "<p>Swipe down to retry</p>"
                                       + "</body></html>";
                               view.loadDataWithBaseURL(TARGET_URL, html, "text/html", "UTF-8", null);
                           }
@@ -291,3 +383,4 @@ jobs:
         with:
           name: PTA-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          
